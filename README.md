@@ -1,20 +1,32 @@
-# Python Scripting System for EntityX (α Alpha)
+# Python Bindings for [EntityX](https://github.com/alecthomas/entityx) (α Alpha)
 
-This system adds the ability to extend entity logic with Python scripts. The goal is to allow ad-hoc behaviour to be assigned to entities, in contract to the more pure entity-component system approach.
+This system adds the ability to extend entity logic with Python scripts. The goal is to allow ad-hoc behaviour to be assigned to entities through scripts, in contrast to the more strictly pure entity-component system approach.
+
+## Example
+
+```python
+from entityx import Entity, Component, emit
+from mygame import Position, Health, Dead
+
+
+class Player(Entity):
+    position = Component(Position, 0, 0)
+    health = Component(Health, 100)
+
+    def on_collision(self, event):
+        self.health.health -= 10
+        if self.health.health <= 0:
+            emit(Dead(self))
+
+```
 
 ## Building and installing
 
 First, install [EntityX](https://github.com/alecthomas/entityx). Then check out the source to entityx_python and run:
 
 ```bash
-./waf configure --shared build install --check
+./waf configure build install --check
 ```
-
-## Limitations
-
-Planned features that are currently unimplemented:
-
-- Emitting events from Python.
 
 ## Design
 
@@ -50,28 +62,45 @@ Here's an example:
 
 ```c++
 namespace py = boost::python;
-using namespace entityx;
-using namespace entityx::python;
 
-
-struct Position : public Component<Position> {
+struct Position : public entityx::Component<Position> {
   Position(float x = 0.0, float y = 0.0) : x(x), y(y) {}
 
   float x, y;
 };
 
 void export_position_to_python() {
-  py::class_<PythonPosition, ptr<PythonPosition>>("Position", py::init<py::optional<float, float>>())
-    .def("assign_to", &assign_to<Position>)          // Allows this component to be assigned to an entity
-    .def("get_component", &get_component<Position>)  // Allows this component to be retrieved from an entity.
-    .staticmethod("get_component")                   // (as above)
-    .def_readwrite("x", &PythonPosition::x)
-    .def_readwrite("y", &PythonPosition::y);
+  py::class_<Position, entityx::ptr<Position>>("Position", py::init<py::optional<float, float>>())
+    // Allows this component to be assigned to an entity
+    .def("assign_to", &entityx::python::assign_to<Position>)  
+    // Allows this component to be retrieved from an entity.
+    .def("get_component", &entityx::python::get_component<Position>)
+    .staticmethod("get_component")
+    .def_readwrite("x", &Position::x)
+    .def_readwrite("y", &Position::y);
 }
 
 BOOST_PYTHON_MODULE(mygame) {
   export_position_to_python();
 }
+```
+
+### Using C++ Components from Python
+
+Use the `entityx.Component` class descriptor to associate components and provide default constructor arguments:
+
+```python
+import entityx
+from mygame import Position  # C++ Component
+
+class MyEntity(entityx.Entity):
+    # Ensures MyEntity has an associated Position component, 
+    # constructed with the given arguments.
+    position = entityx.Component(Position, 1, 2)
+
+    def __init__(self):
+        assert self.position.x == 1
+        assert self.position.y == 2
 ```
 
 ### Delivering events to Python entities
@@ -98,20 +127,21 @@ the protected member `entities`. Here's a collision example, where the proxy
 only delivers collision events to the colliding entities themselves:
 
 ```c++
-struct CollisionEvent : public Event<CollisionEvent> {
+struct CollisionEvent : public entityx::Event<CollisionEvent> {
   CollisionEvent(Entity a, Entity b) : a(a), b(b) {}
 
+  // NOTE: See note below in export_collision_event_to_python().
   Entity a, b;
 };
 
-struct CollisionEventProxy : public PythonEventProxy, public Receiver<CollisionEvent> {
-  CollisionEventProxy() : PythonEventProxy("on_collision") {}
+struct CollisionEventProxy : public entityx::python::PythonEventProxy, public entityx::Receiver<CollisionEvent> {
+  CollisionEventProxy() : entityx::python::PythonEventProxy("on_collision") {}
 
   void receive(const CollisionEvent &event) {
     // "entities" is a protected data member, populated by
     // PythonSystem, with Python entities that pass can_send().
     for (auto entity : entities) {
-      auto py_entity = entity.template component<PythonComponent>();
+      auto py_entity = entity.template component<entityx::python::PythonComponent>();
       if (entity == event.a || entity == event.b) {
         py_entity->object.attr(handler_name.c_str())(event);
       }
@@ -120,9 +150,12 @@ struct CollisionEventProxy : public PythonEventProxy, public Receiver<CollisionE
 };
 
 void export_collision_event_to_python() {
-  py::class_<CollisionEvent, ptr<CollisionEvent>, py::bases<BaseEvent>>("Collision", py::init<Entity, Entity>())
-    .def_readonly("a", &CollisionEvent::a)
-    .def_readonly("b", &CollisionEvent::b);
+  py::class_<CollisionEvent, entityx::ptr<CollisionEvent>, py::bases<BaseEvent>>("Collision", py::init<Entity, Entity>())
+    // NOTE: Normally, def_readonly() would be used to expose attributes,
+    // but you must use the following construct in order for Entity 
+    // objects to be automatically converted into their Python instances.
+    .add_property("a", py::make_getter(&CollisionEvent::a, py::return_value_policy<py::return_by_value>()))
+    .add_property("b", py::make_getter(&CollisionEvent::b, py::return_value_policy<py::return_by_value>()));
 }
 
 
@@ -164,10 +197,11 @@ Then create and destroy `PythonSystem` as necessary:
 ```c++
 // Initialize the PythonSystem.
 vector<string> paths;
+// Ensure that MYGAME_PYTHON_PATH includes entityx.py from this distribution.
 paths.push_back(MYGAME_PYTHON_PATH);
 // +any other Python paths...
-ptr<PythonSystem> python(new PythonSystem(paths));
+entityx::ptr<entityx::python::PythonSystem> python(new entityx::python::PythonSystem(paths));
 
 // Add any Event proxies.
-python->add_event_proxy<CollisionEvent>(ev, ptr<CollisionEventProxy>(new CollisionEventProxy()));
+python->add_event_proxy<CollisionEvent>(ev, entityx::ptr<CollisionEventProxy>(new CollisionEventProxy()));
 ```
