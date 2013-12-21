@@ -17,6 +17,7 @@
 #include <sstream>
 #include "entityx/python/PythonSystem.h"
 
+
 namespace py = boost::python;
 
 namespace entityx {

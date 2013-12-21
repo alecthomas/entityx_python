@@ -20,7 +20,7 @@
 #include "entityx/System.h"
 #include "entityx/Entity.h"
 #include "entityx/Event.h"
-#include "entityx/config.h"
+#include "entityx/python/config.h"
 
 // boost::python smart pointer adapter for std::shared_ptr<T>
 #ifdef ENTITYX_NEED_GET_POINTER_SHARED_PTR_SPECIALIZATION

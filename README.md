@@ -2,6 +2,14 @@
 
 This system adds the ability to extend entity logic with Python scripts. The goal is to allow ad-hoc behaviour to be assigned to entities, in contract to the more pure entity-component system approach.
 
+## Building and installing
+
+First, install [EntityX](https://github.com/alecthomas/entityx). Then check out the source to entityx_python and run:
+
+```bash
+./waf configure --shared build install --check
+```
+
 ## Limitations
 
 Planned features that are currently unimplemented:
