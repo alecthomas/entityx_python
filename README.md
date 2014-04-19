@@ -25,7 +25,7 @@ class Player(Entity):
 First, install [EntityX](https://github.com/alecthomas/entityx). Then check out the source to entityx_python and run:
 
 ```bash
-./waf configure build install --check
+./waf configure build install
 ```
 
 ## Design

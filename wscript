@@ -5,8 +5,8 @@ import sys
 
 
 def options(opt):
-    opt.load('compiler_cxx boost unittest_gtest')
-    opt.add_option('--no-shared', action='store_true', help='Build shared libraries')
+    opt.load('compiler_cxx boost waf_unit_test')
+    opt.add_option('--no-shared', action='store_true', help='Do not build shared libraries')
     opt.add_option('--mode', action='store', default='release', help='Compile mode: release or debug')
 
 
@@ -22,9 +22,7 @@ def configure(conf):
         conf.env.append_value('CXXFLAGS', ['-std=c++11', '-stdlib=libc++', '-Wall'])
         conf.env.append_value('LDFLAGS', ['-std=c++11', '-stdlib=libc++'])
 
-    conf.env.append_value('CXXFLAGS',
-                          ['-DGTEST_USE_OWN_TR1_TUPLE=1', '-DBOOST_NO_CXX11_NUMERIC_LIMITS=1'])
-    conf.load('compiler_cxx boost unittest_gtest')
+    conf.load('compiler_cxx boost waf_unit_test')
     conf.check_boost(lib='python')
     conf.check_cfg(package='python', path='python-config',
                    args=['--includes', '--libs'],
@@ -49,13 +47,15 @@ def build(bld):
               source='entityx/python/PythonSystem.cc',
               use='BOOST PYTHON ENTITYX',
               install_path='${PREFIX}/lib')
+    from waflib.Tools import waf_unit_test
+    bld.add_post_fun(waf_unit_test.summary)
     if not bld.options.no_shared:
         bld.shlib(target='entityx_python',
                   features='cxx',
                   source='entityx/python/PythonSystem.cc',
                   use='BOOST PYTHON ENTITYX',
                   install_path='${PREFIX}/lib')
-    bld.program(features='gtest',
+    bld.program(features='cxx cxxprogram test',
                 source='entityx/python/PythonSystem_test.cc',
                 includes='.',
                 target='python_test',
