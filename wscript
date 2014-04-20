@@ -47,8 +47,11 @@ def build(bld):
               source='entityx/python/PythonSystem.cc',
               use='BOOST PYTHON ENTITYX',
               install_path='${PREFIX}/lib')
+
     from waflib.Tools import waf_unit_test
     bld.add_post_fun(waf_unit_test.summary)
+    bld.options.all_tests = True
+
     if not bld.options.no_shared:
         bld.shlib(target='entityx_python',
                   features='cxx',

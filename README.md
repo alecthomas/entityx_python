@@ -72,7 +72,7 @@ struct Position : public entityx::Component<Position> {
 void export_position_to_python() {
   py::class_<Position, entityx::ptr<Position>>("Position", py::init<py::optional<float, float>>())
     // Allows this component to be assigned to an entity
-    .def("assign_to", &entityx::python::assign_to<Position>)  
+    .def("assign_to", &entityx::python::assign_to<Position>)
     // Allows this component to be retrieved from an entity.
     .def("get_component", &entityx::python::get_component<Position>)
     .staticmethod("get_component")
@@ -94,7 +94,7 @@ import entityx
 from mygame import Position  # C++ Component
 
 class MyEntity(entityx.Entity):
-    # Ensures MyEntity has an associated Position component, 
+    # Ensures MyEntity has an associated Position component,
     # constructed with the given arguments.
     position = entityx.Component(Position, 1, 2)
 
@@ -152,7 +152,7 @@ struct CollisionEventProxy : public entityx::python::PythonEventProxy, public en
 void export_collision_event_to_python() {
   py::class_<CollisionEvent, entityx::ptr<CollisionEvent>, py::bases<BaseEvent>>("Collision", py::init<Entity, Entity>())
     // NOTE: Normally, def_readonly() would be used to expose attributes,
-    // but you must use the following construct in order for Entity 
+    // but you must use the following construct in order for Entity
     // objects to be automatically converted into their Python instances.
     .add_property("a", py::make_getter(&CollisionEvent::a, py::return_value_policy<py::return_by_value>()))
     .add_property("b", py::make_getter(&CollisionEvent::b, py::return_value_policy<py::return_by_value>()));
