@@ -9,7 +9,7 @@
  */
 
  // http://docs.python.org/2/extending/extending.html
-#include <Python.h>
+#include <boost/python.hpp>
 #include <boost/noncopyable.hpp>
 #include <cassert>
 #include <string>
@@ -66,7 +66,7 @@ struct PythonEntity {
 
   operator Entity () const { return _entity; }
 
-  virtual void update(float dt, int frame) {}
+  virtual void update(float dt) {}
 
   Entity::Id _entity_id() const {
     return _entity.id();
@@ -217,8 +217,8 @@ void PythonSystem::configure(EventManager& ev) {
     }
 
     py::object entityx = py::import("_entityx");
-    entityx.attr("_entity_manager") = boost::ref(em_);
-    entityx.attr("_event_manager") = boost::ref(ev);
+    entityx.attr("_entity_manager") = boost::ref<EntityManager>(em_);
+    entityx.attr("_event_manager") = boost::ref<EventManager>(ev);
   }
   catch ( ... ) {
     PyErr_Print();

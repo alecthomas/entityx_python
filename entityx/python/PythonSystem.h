@@ -11,7 +11,6 @@
 #pragma once
 
  // http://docs.python.org/2/extending/extending.html
-#include <Python.h>
 #include <boost/python.hpp>
 #include <boost/function.hpp>
 #include <list>
@@ -218,7 +217,7 @@ public:
   template <typename Event, typename Proxy>
   void add_event_proxy(EventManager& event_manager, std::shared_ptr<Proxy> proxy) {
     event_manager.subscribe<Event>(*proxy);
-    event_proxies_.push_back(static_pointer_cast<PythonEventProxy>(proxy));
+    event_proxies_.push_back(std::static_pointer_cast<PythonEventProxy>(proxy));
   }
 
   void receive(const EntityDestroyedEvent &event);
@@ -232,7 +231,6 @@ private:
   LoggerFunction stdout_, stderr_;
   static bool initialized_;
   std::vector<std::shared_ptr<PythonEventProxy>> event_proxies_;
-  int frame_ = 0;
 };
 }  // namespace python
 }  // namespace entityx

@@ -145,8 +145,9 @@ add_library(entityx_python STATIC ${sources})
 set_target_properties(entityx_python PROPERTIES DEBUG_POSTFIX -d FOLDER entityx)
 target_link_libraries(entityx_python ${ENTITYX_LIBRARIES} ${Boost_LIBRARIES} ${PYTHON_LIBRARIES})
 
-if (ENTITYX_BUILD_SHARED)
-    message("-- Building shared libraries (-DENTITYX_BUILD_SHARED=0 to only build static librarires)")
+# Enable python shared builds (untested)
+if (ENTITYX_PYTHON_BUILD_SHARED)
+    message("-- Building shared libraries (-DENTITYX_PYTHON_BUILD_SHARED=0 to only build static librarires)")
     add_library(entityx_python_shared SHARED ${sources})
     target_link_libraries(entityx_python_shared)
     set_target_properties(entityx_python_shared PROPERTIES
@@ -156,12 +157,13 @@ if (ENTITYX_BUILD_SHARED)
         SOVERSION ${ENTITYX_MAJOR_VERSION}
         FOLDER entityx/python/)
     list(APPEND install_libs entityx_python_shared)
-endif (ENTITYX_BUILD_SHARED)
+endif (ENTITYX_PYTHON_BUILD_SHARED)
 
-if (ENTITYX_BUILD_TESTING)
+if (ENTITYX_PYTHON_BUILD_TESTING)
     enable_testing()
-    create_test(pool_test entityx/python/PythonSystem_test.cc)
-endif (ENTITYX_BUILD_TESTING)
+    add_definitions(-DENTITYX_PYTHON_TEST_DATA="${CMAKE_CURRENT_SOURCE_DIR}/entityx/python/")
+    create_test(PythonSystem_test entityx/python/PythonSystem_test.cc)
+endif (ENTITYX_PYTHON_BUILD_TESTING)
 
 
 configure_file(

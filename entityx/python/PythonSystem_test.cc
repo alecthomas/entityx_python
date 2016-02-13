@@ -8,15 +8,15 @@
  * Author: Alec Thomas <alec@swapoff.org>
  */
 
- #define CATCH_CONFIG_MAIN
+#define CATCH_CONFIG_MAIN
 
-// NOTE: MUST be first include. See http://docs.python.org/2/extending/extending.html
-#include <Python.h>
+ // NOTE: MUST be first include. See http://docs.python.org/2/extending/extending.html
 #include <boost/python.hpp>
 #include <cassert>
 #include <vector>
 #include <string>
 #include <iostream>
+#include <memory>
 #include "entityx/python/3rdparty/catch.hpp"
 #include "entityx/entityx.h"
 #include "entityx/python/PythonSystem.h"
@@ -27,20 +27,17 @@ using std::endl;
 using namespace entityx;
 using namespace entityx::python;
 
-
-struct Position : public Component<Position> {
+struct Position {
   Position(float x = 0.0, float y = 0.0) : x(x), y(y) {}
 
   float x, y;
 };
 
-
-struct Direction : public Component<Direction> {
+struct Direction {
   Direction(float x = 0.0, float y = 0.0) : x(x), y(y) {}
 
   float x, y;
 };
-
 
 struct CollisionEvent : public Event<CollisionEvent> {
   CollisionEvent(Entity a, Entity b) : a(a), b(b) {}
@@ -48,84 +45,87 @@ struct CollisionEvent : public Event<CollisionEvent> {
   Entity a, b;
 };
 
-
 struct CollisionEventProxy : public PythonEventProxy, public Receiver<CollisionEvent> {
   CollisionEventProxy() : PythonEventProxy("on_collision") {}
 
   void receive(const CollisionEvent &event) {
-    for (auto entity : entities) {
-      if (entity == event.a || entity == event.b) {
-        auto py_entity = entity.component<PythonComponent>();
+    for ( auto entity : entities ) {
+      if ( entity == event.a || entity == event.b ) {
+        auto py_entity = entity.component<PythonScript>();
         py_entity->object.attr("on_collision")(event);
       }
     }
   }
 };
 
-
 BOOST_PYTHON_MODULE(entityx_python_test) {
-  py::class_<Position, ptr<Position>>("Position", py::init<py::optional<float, float>>())
+  py::class_<Position>("Position", py::init<py::optional<float, float>>())
     .def("assign_to", &assign_to<Position>)
-    .def("get_component", &get_component<Position>)
+    .def("get_component", &get_component<Position>,
+         py::return_value_policy<py::reference_existing_object>())
     .staticmethod("get_component")
     .def_readwrite("x", &Position::x)
     .def_readwrite("y", &Position::y);
 
-  py::class_<Direction, ptr<Direction>>("Direction", py::init<py::optional<float, float>>())
+  py::class_<Direction>("Direction", py::init<py::optional<float, float>>())
     .def("assign_to", &assign_to<Direction>)
-    .def("get_component", &get_component<Direction>)
+    .def("get_component", &get_component<Direction>,
+         py::return_value_policy<py::reference_existing_object>())
     .staticmethod("get_component")
     .def_readwrite("x", &Direction::x)
     .def_readwrite("y", &Direction::y);
 
-  py::class_<CollisionEvent, ptr<CollisionEvent>, py::bases<BaseEvent>>("Collision", py::init<Entity, Entity>())
+  py::class_<CollisionEvent>("Collision", py::init<Entity, Entity>())
     .add_property("a", py::make_getter(&CollisionEvent::a, py::return_value_policy<py::return_by_value>()))
     .add_property("b", py::make_getter(&CollisionEvent::b, py::return_value_policy<py::return_by_value>()));
-}
 
+  void (EventManager::*emit)(const CollisionEvent &) = &EventManager::emit;
+
+  py::class_<EventManager, boost::noncopyable>("EventManager", py::no_init)
+    .def("emit", emit);
+}
 
 class PythonSystemTest {
 protected:
-  PythonSystemTest() : event_manager(entityx::EventManager::make()), entity_manager(entityx::EntityManager::make(event_manager)) {
-    assert(PyImport_AppendInittab("entityx_python_test", initentityx_python_test) != -1 && "Failed to initialize entityx_python_test Python module");
-    python.reset(new PythonSystem(entity_manager));
-    python->add_path(ENTITYX_PYTHON_TEST_DATA);
-    if (!initialized) {
+  PythonSystemTest() : entity_manager(event_manager), python(entity_manager) {
+    assert(PyImport_AppendInittab("entityx_python_test", initentityx_python_test) != -1
+           && "Failed to initialize entityx_python_test Python module");
+    python.add_path(ENTITYX_PYTHON_TEST_DATA);
+    if ( !initialized ) {
       initentityx_python_test();
       initialized = true;
     }
-    python->add_event_proxy<CollisionEvent>(event_manager, ptr<CollisionEventProxy>(new CollisionEventProxy()));
-    python->configure(event_manager);
+    python.add_event_proxy<CollisionEvent>(event_manager, std::make_shared<CollisionEventProxy>());
+    python.configure(event_manager);
   }
 
-  ptr<PythonSystem> python;
-  ptr<EventManager> event_manager;
-  ptr<EntityManager> entity_manager;
+  PythonSystem python;
+  EventManager event_manager;
+  EntityManager entity_manager;
   static bool initialized;
 };
 
 bool PythonSystemTest::initialized = false;
 
-
 TEST_CASE_METHOD(PythonSystemTest, "TestSystemUpdateCallsEntityUpdate") {
   try {
-    Entity e = entity_manager->create();
-    auto script = e.assign<PythonComponent>("entityx.tests.update_test", "UpdateTest");
+    Entity e = entity_manager.create();
+    auto script = e.assign<PythonScript>("entityx.tests.update_test", "UpdateTest");
     REQUIRE(!py::extract<bool>(script->object.attr("updated")));
-    python->update(entity_manager, event_manager, 0.1);
+    python.update(entity_manager, event_manager, static_cast<TimeDelta>(0.1));
     REQUIRE(py::extract<bool>(script->object.attr("updated")));
-  } catch(...) {
+  }
+  catch ( ... ) {
     PyErr_Print();
     PyErr_Clear();
     REQUIRE(false);
   }
 }
 
-
 TEST_CASE_METHOD(PythonSystemTest, "TestComponentAssignmentCreationInPython") {
   try {
-    Entity e = entity_manager->create();
-    auto script = e.assign<PythonComponent>("entityx.tests.assign_test", "AssignTest");
+    Entity e = entity_manager.create();
+    auto script = e.assign<PythonScript>("entityx.tests.assign_test", "AssignTest");
     REQUIRE(static_cast<bool>(e.component<Position>()));
     REQUIRE(script->object);
     REQUIRE(script->object.attr("test_assign_create"));
@@ -134,19 +134,19 @@ TEST_CASE_METHOD(PythonSystemTest, "TestComponentAssignmentCreationInPython") {
     REQUIRE(static_cast<bool>(position));
     REQUIRE(position->x == 1.0);
     REQUIRE(position->y == 2.0);
-  } catch(...) {
+  }
+  catch ( ... ) {
     PyErr_Print();
     PyErr_Clear();
     REQUIRE(false);
   }
 }
 
-
 TEST_CASE_METHOD(PythonSystemTest, "TestComponentAssignmentCreationInCpp") {
   try {
-    Entity e = entity_manager->create();
+    Entity e = entity_manager.create();
     e.assign<Position>(2, 3);
-    auto script = e.assign<PythonComponent>("entityx.tests.assign_test", "AssignTest");
+    auto script = e.assign<PythonScript>("entityx.tests.assign_test", "AssignTest");
     REQUIRE(static_cast<bool>(e.component<Position>()));
     REQUIRE(script->object);
     REQUIRE(script->object.attr("test_assign_existing"));
@@ -155,84 +155,84 @@ TEST_CASE_METHOD(PythonSystemTest, "TestComponentAssignmentCreationInCpp") {
     REQUIRE(static_cast<bool>(position));
     REQUIRE(position->x == 3.0);
     REQUIRE(position->y == 4.0);
-  } catch(...) {
+  }
+  catch ( ... ) {
     PyErr_Print();
     PyErr_Clear();
     REQUIRE(false);
   }
 }
 
-
 TEST_CASE_METHOD(PythonSystemTest, "TestEntityConstructorArgs") {
   try {
-    Entity e = entity_manager->create();
-    auto script = e.assign<PythonComponent>("entityx.tests.constructor_test", "ConstructorTest", 4.0, 5.0);
+    Entity e = entity_manager.create();
+    auto script = e.assign<PythonScript>("entityx.tests.constructor_test", "ConstructorTest", 4.0, 5.0);
     auto position = e.component<Position>();
     REQUIRE(static_cast<bool>(position));
     REQUIRE(position->x == 4.0);
     REQUIRE(position->y == 5.0);
-  } catch(...) {
+  }
+  catch ( ... ) {
     PyErr_Print();
     PyErr_Clear();
     REQUIRE(false);
   }
 }
-
 
 TEST_CASE_METHOD(PythonSystemTest, "TestEventDelivery") {
   try {
-    Entity f = entity_manager->create();
-    Entity e = entity_manager->create();
-    Entity g = entity_manager->create();
-    auto scripte = e.assign<PythonComponent>("entityx.tests.event_test", "EventTest");
-    auto scriptf = f.assign<PythonComponent>("entityx.tests.event_test", "EventTest");
-    auto scriptg = g.assign<PythonComponent>("entityx.tests.event_test", "EventTest");
+    Entity f = entity_manager.create();
+    Entity e = entity_manager.create();
+    Entity g = entity_manager.create();
+    auto scripte = e.assign<PythonScript>("entityx.tests.event_test", "EventTest");
+    auto scriptf = f.assign<PythonScript>("entityx.tests.event_test", "EventTest");
+    auto scriptg = g.assign<PythonScript>("entityx.tests.event_test", "EventTest");
     REQUIRE(!scripte->object.attr("collided"));
     REQUIRE(!scriptf->object.attr("collided"));
-    event_manager->emit<CollisionEvent>(f, g);
+    event_manager.emit<CollisionEvent>(f, g);
     REQUIRE(scriptf->object.attr("collided"));
     REQUIRE(!scripte->object.attr("collided"));
-    event_manager->emit<CollisionEvent>(e, f);
+    event_manager.emit<CollisionEvent>(e, f);
     REQUIRE(scriptf->object.attr("collided"));
     REQUIRE(scripte->object.attr("collided"));
-  } catch(...) {
+  }
+  catch ( ... ) {
     PyErr_Print();
     PyErr_Clear();
     REQUIRE(false);
   }
 }
-
 
 TEST_CASE_METHOD(PythonSystemTest, "TestDeepEntitySubclass") {
   try {
-    Entity e = entity_manager->create();
-    auto script = e.assign<PythonComponent>("entityx.tests.deep_subclass_test", "DeepSubclassTest");
+    Entity e = entity_manager.create();
+    auto script = e.assign<PythonScript>("entityx.tests.deep_subclass_test", "DeepSubclassTest");
     REQUIRE(script->object.attr("test_deep_subclass"));
     script->object.attr("test_deep_subclass")();
 
-    Entity e2 = entity_manager->create();
-    auto script2 = e2.assign<PythonComponent>("entityx.tests.deep_subclass_test", "DeepSubclassTest2");
+    Entity e2 = entity_manager.create();
+    auto script2 = e2.assign<PythonScript>("entityx.tests.deep_subclass_test", "DeepSubclassTest2");
     REQUIRE(script2->object.attr("test_deeper_subclass"));
     script2->object.attr("test_deeper_subclass")();
-  } catch(...) {
+  }
+  catch ( ... ) {
     PyErr_Print();
     PyErr_Clear();
     REQUIRE(false);
   }
 }
-
 
 TEST_CASE_METHOD(PythonSystemTest, "TestEntityCreationFromPython") {
   try {
     py::object test = py::import("entityx.tests.create_entities_from_python_test");
     test.attr("create_entities_from_python_test")();
-  } catch(...) {
+  }
+  catch ( ... ) {
     PyErr_Print();
     PyErr_Clear();
     REQUIRE(false);
   }
 }
-
 
 TEST_CASE_METHOD(PythonSystemTest, "TestEventEmissionFromPython") {
   try {
@@ -246,7 +246,7 @@ TEST_CASE_METHOD(PythonSystemTest, "TestEventEmissionFromPython") {
     };
 
     CollisionReceiver receiver;
-    event_manager->subscribe<CollisionEvent>(receiver);
+    event_manager.subscribe<CollisionEvent>(receiver);
 
     REQUIRE(!receiver.a);
     REQUIRE(!receiver.b);
@@ -256,7 +256,9 @@ TEST_CASE_METHOD(PythonSystemTest, "TestEventEmissionFromPython") {
 
     REQUIRE(receiver.a);
     REQUIRE(receiver.b);
-  } catch(...) {
+    REQUIRE(receiver.a != receiver.b);
+  }
+  catch ( ... ) {
     PyErr_Print();
     PyErr_Clear();
     REQUIRE(false);
