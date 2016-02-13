@@ -28,7 +28,7 @@ namespace python {
 class PythonScript {
 public:
   /**
-   * Create a new PythonComponent from a Python Entity class.
+   * Create a new PythonScript from a Python Entity class.
    *
    * @param module The Python module where the Entity subclass resides.
    * @param cls The Class within the module. Must inherit from entityx.Entity.
@@ -40,7 +40,7 @@ public:
   }
 
   /**
-   * Create a new PythonComponent from an existing Python instance.
+   * Create a new PythonScript from an existing Python instance.
    */
   explicit PythonScript(boost::python::object object) : object(object) {}
 
@@ -146,7 +146,7 @@ public:
 
   void receive(const Event &event) {
     for ( auto entity : entities ) {
-      auto py_entity = entity.template component<PythonComponent>();
+      auto py_entity = entity.template component<PythonScript>();
       py_entity->object.attr(handler_name.c_str())(event);
     }
   }
@@ -208,7 +208,7 @@ public:
   void add_event_proxy(EventManager& event_manager, const std::string &handler_name) {
     std::shared_ptr<BroadcastPythonEventProxy<Event>> proxy(new BroadcastPythonEventProxy<Event>(handler_name));
     event_manager.subscribe<Event>(*proxy.get());
-    event_proxies_.push_back(static_pointer_cast<PythonEventProxy>(proxy));
+    event_proxies_.push_back(std::static_pointer_cast<PythonEventProxy>(proxy));
   }
 
   /**

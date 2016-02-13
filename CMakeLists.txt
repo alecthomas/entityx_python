@@ -28,12 +28,17 @@ set(libdir ${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR})
 
 # Default compiler args
 if (CMAKE_CXX_COMPILER_ID MATCHES "(GNU|.*Clang)")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pedantic
-        -Werror -Wall -Wextra -Wno-unused-parameter
-        -Wno-error=unused-variable -Wno-error=sign-compare -std=c++11")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pedantic -Werror -Wall -Wextra -Wno-unused-parameter -Wno-error=unused-variable -Wno-error=sign-compare -std=c++11 -Wno-error=deprecated-declarations -Wno-unused-local-typedefs")
+    if (CMAKE_CXX_COMPILER_ID MATCHES "(.*Clang)")
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-missing-field-initializers -Qunused-arguments")
+    endif()
+    if (CMAKE_CXX_COMPILER_ID MATCHES "(GNU)")
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-error=unused-local-typedefs")
+    endif()
     set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g")
     set(CMAKE_CXX_FLAGS_MINSIZEREL "-g -Os -DNDEBUG")
     set(CMAKE_CXX_FLAGS_RELEASE "-g -O2 -DNDEBUG")
+    set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O2 -g")
     set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O2 -g")
 elseif(CMAKE_CXX_COMPILER_ID STREQUAL 'MSVC')
     # /Zi - Produces a program database (PDB) that contains type information and symbolic debugging information for use with the debugger.
@@ -47,8 +52,15 @@ elseif(CMAKE_CXX_COMPILER_ID STREQUAL 'MSVC')
 endif()
 
 include(${CMAKE_ROOT}/Modules/CheckIncludeFile.cmake)
+# C++11 feature checks
 include(CheckCXXSourceCompiles)
 
+# Set -stdlib=lib++ for the next test. MacOS has libc++ installed, but Linux
+# don't necessarily have that.
+set(OLD_CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+if (CMAKE_CXX_COMPILER_ID MATCHES "(GNU|.*Clang)")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++")
+endif()
 check_cxx_source_compiles(
 "
 #include <memory>
@@ -60,13 +72,12 @@ int main() {
 ENTITYX_HAVE_CXX11_STDLIB
 )
 
+# Revert addition of -stdlib=libc++ if we couldn't build main with memory.
 if (NOT ENTITYX_HAVE_CXX11_STDLIB)
     message("-- Not using -stdlib=libc++ (test failed to build)")
+    set(CMAKE_CXX_FLAGS "${OLD_CMAKE_CXX_FLAGS}")
 else ()
     message("-- Using -stdlib=libc++")
-    if (CMAKE_CXX_COMPILER_ID MATCHES "(GNU|.*Clang)")
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++")
-    endif()
 endif ()
 
 # Misc features
@@ -112,8 +123,8 @@ endif()
 
 # Add entityx
 # TODO(SMA) : Update FindEntityX.cmake to find the version tag, we've tested this
-# with version 1.1.2
-# find_package(entityx 1.1.2 REQUIRED)
+# with version 1.2.0
+# find_package(entityx 1.2.0 REQUIRED)
 find_package(EntityX REQUIRED)
 message(status "** EntityX Include: ${ENTITYX_INCLUDE_DIRS}")
 message(status "** EntityX Libraries: ${ENTITYX_LIBRARIES}")
@@ -127,13 +138,19 @@ set(ENTITYX_INSTALLED_PYTHON_PACKAGE_DIR ${PYTHON_ROOT}/Lib CACHE STRING "Python
 # Define HAVE_ROUND for pymath.h
 add_definitions(/DHAVE_ROUND)
 # HACK(SMA): Always statically link boost & python
-add_definitions(-DBOOST_STATIC -DBOOST_PYTHON_STATIC_LIB )
+add_definitions(-DBOOST_NO_AUTO_PTR -DBOOST_STATIC -DBOOST_PYTHON_STATIC_LIB )
 
 include_directories(${CMAKE_CURRENT_LIST_DIR})
 include_directories(${PYTHON_INCLUDE_DIRS})
 include_directories(${Boost_INCLUDE_DIRS})
 include_directories(${ENTITYX_INCLUDE_DIRS})
 link_directories(${Boost_LIBRARY_DIR})
+
+# Generate python configs
+configure_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/entityx/python/config.h.in
+    ${CMAKE_CURRENT_SOURCE_DIR}/entityx/python/config.h
+)
 
 # Things to install
 set(install_libs entityx_python)
@@ -164,12 +181,6 @@ if (ENTITYX_PYTHON_BUILD_TESTING)
     add_definitions(-DENTITYX_PYTHON_TEST_DATA="${CMAKE_CURRENT_SOURCE_DIR}/entityx/python/")
     create_test(PythonSystem_test entityx/python/PythonSystem_test.cc)
 endif (ENTITYX_PYTHON_BUILD_TESTING)
-
-
-configure_file(
-    ${CMAKE_CURRENT_SOURCE_DIR}/entityx/python/config.h.in
-    ${CMAKE_CURRENT_SOURCE_DIR}/entityx/python/config.h
-)
 
 install(
     DIRECTORY "entityx/python/"

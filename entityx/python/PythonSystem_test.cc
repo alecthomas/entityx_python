@@ -87,7 +87,7 @@ BOOST_PYTHON_MODULE(entityx_python_test) {
 
 class PythonSystemTest {
 protected:
-  PythonSystemTest() : entity_manager(event_manager), python(entity_manager) {
+  PythonSystemTest() : python(entity_manager), entity_manager(event_manager) {
     assert(PyImport_AppendInittab("entityx_python_test", initentityx_python_test) != -1
            && "Failed to initialize entityx_python_test Python module");
     python.add_path(ENTITYX_PYTHON_TEST_DATA);
@@ -166,7 +166,7 @@ TEST_CASE_METHOD(PythonSystemTest, "TestComponentAssignmentCreationInCpp") {
 TEST_CASE_METHOD(PythonSystemTest, "TestEntityConstructorArgs") {
   try {
     Entity e = entity_manager.create();
-    auto script = e.assign<PythonScript>("entityx.tests.constructor_test", "ConstructorTest", 4.0, 5.0);
+    e.assign<PythonScript>("entityx.tests.constructor_test", "ConstructorTest", 4.0, 5.0);
     auto position = e.component<Position>();
     REQUIRE(static_cast<bool>(position));
     REQUIRE(position->x == 4.0);
@@ -189,12 +189,15 @@ TEST_CASE_METHOD(PythonSystemTest, "TestEventDelivery") {
     auto scriptg = g.assign<PythonScript>("entityx.tests.event_test", "EventTest");
     REQUIRE(!scripte->object.attr("collided"));
     REQUIRE(!scriptf->object.attr("collided"));
+    REQUIRE(!scriptg->object.attr("collided"));
     event_manager.emit<CollisionEvent>(f, g);
     REQUIRE(scriptf->object.attr("collided"));
     REQUIRE(!scripte->object.attr("collided"));
+    REQUIRE(scriptg->object.attr("collided"));
     event_manager.emit<CollisionEvent>(e, f);
     REQUIRE(scriptf->object.attr("collided"));
     REQUIRE(scripte->object.attr("collided"));
+    REQUIRE(scriptg->object.attr("collided"));
   }
   catch ( ... ) {
     PyErr_Print();
