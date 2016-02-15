@@ -24,7 +24,7 @@ class Player(Entity):
 
 EntityX Python has the following build and runtime requirements:
 
-- [EntityX](https://github.com/alecthomas/entityx
+- [EntityX](https://github.com/alecthomas/entityx)
 - [Boost Python](https://boostorg.github.io/python/doc/html/index.html)
 - [CMake](http://cmake.org/)
 
