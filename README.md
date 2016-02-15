@@ -22,19 +22,35 @@ class Player(Entity):
 
 ## Building and installing
 
-First, install [EntityX](https://github.com/alecthomas/entityx). Then check out the source to entityx_python and run:
+EntityX Python has the following build and runtime requirements:
+
+- [EntityX](https://github.com/alecthomas/entityx)
+- [Boost Python](https://boostorg.github.io/python/doc/html/index.html)
+- [CMake](http://cmake.org/)
+
+### CMake Options:
+
+- `ENTITYX_PYTHON_BUILD_TESTING` : Enable building of tests
+- `BOOST_ROOT` : Set path to boost root if CMake did not find it
+- `ENTITYX_ROOT` : Set path to EntityX root if CMake did not find it
+- `PYTHON_ROOT` : Set path to Python root if CMake did not find it
+
+Check out the source to entityx_python, and run:
 
 ```bash
-./waf configure build install
+mkdir build && cd build
+cmake  ..
+make
+make install
 ```
 
 ## Design
 
-- Python scripts are attached to entities via `PythonComponent`.
+- Python scripts are attached to entities via `PythonScript`.
 - Systems and components can not be created from Python, primarily for performance reasons.
 - Events are proxied directly to Python entities via `PythonEventProxy` objects.
     - Each event to be handled in Python must have an associated `PythonEventProxy`implementation.
-    - As a convenience `BroadcastPythonEventProxy<Event>(handler_method)` can be used. It will broadcast events to all `PythonComponent` entities with a `<handler_method>`.
+    - As a convenience `BroadcastPythonEventProxy<Event>(handler_method)` can be used. It will broadcast events to all `PythonScript` entities with a `<handler_method>`.
 - `PythonSystem` manages scripted entity lifecycle and event delivery.
 
 ## Summary
@@ -47,7 +63,7 @@ To add scripting support to your system, something like the following steps shou
 4. Add classes to the package, inheriting from `entityx.Entity` and using the `entityx.Component` descriptor to assign components.
 5. Create a `PythonSystem`, passing in the list of paths to add to Python's import search path.
 6. Optionally attach any event proxies.
-7. Create an entity and associate it with a Python script by assigning `PythonComponent`, passing it the package name, class name, and any constructor arguments.
+7. Create an entity and associate it with a Python script by assigning `PythonScript`, passing it the package name, class name, and any constructor arguments.
 8. When finished, call `EntityManager::destroy_all()`.
 
 ## Interfacing with Python
@@ -56,7 +72,7 @@ To add scripting support to your system, something like the following steps shou
 
 ### Exposing C++ Components to Python
 
-In most cases, this should be pretty simple. Given a component, provide a `boost::python` class definition wrapped in `entityx::ptr<T>`, with two extra methods defined with EntityX::Python helper functions `assign_to<Component>` and `get_component<Component>`. These are used from Python to assign Python-created components to an entity and to retrieve existing components from an entity, respectively.
+In most cases, this should be pretty simple. Given a component, provide a `boost::python` class definition with two extra methods defined with EntityX::Python helper functions `assign_to<Component>` and `get_component<Component>`. These are used from Python to assign Python-created components to an entity and to retrieve existing components from an entity, respectively.
 
 Here's an example:
 
@@ -70,11 +86,13 @@ struct Position : public entityx::Component<Position> {
 };
 
 void export_position_to_python() {
-  py::class_<Position, entityx::ptr<Position>>("Position", py::init<py::optional<float, float>>())
+  py::class_<Position>("Position", py::init<py::optional<float, float>>())
     // Allows this component to be assigned to an entity
     .def("assign_to", &entityx::python::assign_to<Position>)
     // Allows this component to be retrieved from an entity.
-    .def("get_component", &entityx::python::get_component<Position>)
+    // Set return_value_policy to reference raw component pointer
+    .def("get_component", &entityx::python::get_component<Position>,
+         py::return_value_policy<py::reference_existing_object>() )
     .staticmethod("get_component")
     .def_readwrite("x", &Position::x)
     .def_readwrite("y", &Position::y);
@@ -150,12 +168,18 @@ struct CollisionEventProxy : public entityx::python::PythonEventProxy, public en
 };
 
 void export_collision_event_to_python() {
-  py::class_<CollisionEvent, entityx::ptr<CollisionEvent>, py::bases<BaseEvent>>("Collision", py::init<Entity, Entity>())
+  py::class_<CollisionEvent>("Collision", py::init<Entity, Entity>())
     // NOTE: Normally, def_readonly() would be used to expose attributes,
     // but you must use the following construct in order for Entity
     // objects to be automatically converted into their Python instances.
     .add_property("a", py::make_getter(&CollisionEvent::a, py::return_value_policy<py::return_by_value>()))
     .add_property("b", py::make_getter(&CollisionEvent::b, py::return_value_policy<py::return_by_value>()));
+
+  // Register event manager emit so signal handlers will trigger properly
+  void (EventManager::*emit)(const CollisionEvent &) = &EventManager::emit;
+
+  py::class_<EventManager, boost::noncopyable>("EventManager", py::no_init)
+    .def("emit", emit);
 }
 
 
@@ -192,7 +216,7 @@ CHECK(PyImport_AppendInittab("mygame", initmygame) != -1)
   << "Failed to initialize mygame Python module";
 ```
 
-Then create and destroy `PythonSystem` as necessary:
+Then create a `PythonSystem` as necessary:
 
 ```c++
 // Initialize the PythonSystem.
@@ -200,8 +224,8 @@ vector<string> paths;
 // Ensure that MYGAME_PYTHON_PATH includes entityx.py from this distribution.
 paths.push_back(MYGAME_PYTHON_PATH);
 // +any other Python paths...
-entityx::ptr<entityx::python::PythonSystem> python(new entityx::python::PythonSystem(paths));
+entityx::python::PythonSystem python(paths);
 
 // Add any Event proxies.
-python->add_event_proxy<CollisionEvent>(ev, entityx::ptr<CollisionEventProxy>(new CollisionEventProxy()));
+python->add_event_proxy<CollisionEvent>(ev, std::make_shared<CollisionEventProxy>());
 ```
