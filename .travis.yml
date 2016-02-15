@@ -1,16 +1,103 @@
+branches:
+  only:
+    - master
+
+sudo: false
 language: cpp
 compiler:
   - clang
   - gcc
-before_install:
-  - sudo apt-get install libboost-all-dev
-  - sudo apt-add-repository -y ppa:jkeiren/ppa
-  - if test $CC = gcc; then sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test; fi
-  - sudo apt-get update -qq
-  - if test $CC = gcc; then sudo apt-get install gcc-4.7 g++-4.7; fi
-  - if test $CC = gcc; then sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-4.7 20; fi
-  - if test $CC = gcc; then sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-4.7 20; fi
-  - if test $CC = gcc; then sudo update-alternatives --config gcc; fi
-  - if test $CC = gcc; then sudo update-alternatives --config g++; fi
+addons:
+  apt:
+    sources:
+      - ubuntu-toolchain-r-test
+      - llvm-toolchain-precise
+      - llvm-toolchain-precise-3.7
+    packages:
+      - libstdc++-5-dev
+      - g++-5
+      - clang-3.8
 
-script: ./waf configure build && ./build/python_test
+cache:
+  apt: true
+  directories:
+  - $HOME/.ccache
+  - "deps/boost-install"
+  - "deps/entityx-install"
+  - "deps/cmake"
+
+before_install:
+  - if [ "$CXX" = "g++" ]; then export CXX="g++-5" CC="gcc-5";  g++ --version; fi
+  - if [ "$CXX" == "clang++" ]; then export CXX="clang++-3.8" CC="clang-3.8"; clang --version; fi
+  - echo $CC
+
+install:
+  - DEPS_DIR=${TRAVIS_BUILD_DIR}/deps
+  - pushd .
+  - cd ${DEPS_DIR}
+  - pushd .
+  - if [ ! -d "${DEPS_DIR}/cmake/bin/" ]; then export REBUILD_CMAKE="yes"; else export REBUILD_CMAKE="no"; fi
+    # Build CMAKE
+  - |
+    if [[ "${TRAVIS_OS_NAME}" == "linux" ]]; then
+      if [ "$REBUILD_CMAKE" == "yes" ]; then
+        rm -rf cmake
+        CMAKE_URL="http://www.cmake.org/files/v3.3/cmake-3.3.2-Linux-x86_64.tar.gz"
+        mkdir cmake && travis_retry wget --no-check-certificate -O - ${CMAKE_URL} | tar --strip-components=1 -xz -C cmake
+      fi
+      export PATH=${DEPS_DIR}/cmake/bin:${PATH}
+    else
+      brew install cmake
+    fi
+  - which cmake
+  - cmake --version
+  - popd
+  # Build Boost
+  - pushd .
+  - cd ${DEPS_DIR}
+  - if [ ! -d "${DEPS_DIR}/boost-install/lib" ]; then export REBUILD_BOOST="yes"; else export REBUILD_BOOST="no"; fi
+  - |
+    if [ "$REBUILD_BOOST" == "yes" ]; then
+      rm -rf boost && rm -rf boost-install
+      git clone -b boost-1.59.0 --quiet --recursive https://github.com/boostorg/boost.git boost
+      cd boost
+      chmod +x bootstrap.sh
+      ./bootstrap.sh --prefix="$(pwd)/../boost-install"
+      ./b2 headers
+      # Use gcc as clang has problems building boost
+      ./b2 toolset=gcc-5 cxxflags="-std=c++11" --with-filesystem --with-python install -d0
+    fi
+  - if [ "$REBUILD_BOOST" == "no"  ]; then mkdir boost && cd boost; fi
+  - cd ../boost-install && export BOOST_ROOT="$(pwd)"
+  - popd
+
+    # Build Entityx
+  - pushd .
+  - cd ${DEPS_DIR}
+  - if [ ! -d "${DEPS_DIR}/entityx-install/lib" ]; then export REBUILD_ENTITYX="yes"; else export REBUILD_ENTITYX="no"; fi
+  - |
+    if [ "$REBUILD_ENTITYX" == "yes" ]; then
+      rm -rf entityx
+      git clone -b 1.2.0 --quiet --recursive https://github.com/alecthomas/entityx.git
+      cd entityx
+      cmake -DCMAKE_INSTALL_PREFIX:PATH=${DEPS_DIR}/entityx-install/ -DCMAKE_BUILD_TYPE=Debug -DENTITYX_BUILD_TESTING=1
+      make VERBOSE=1 all install
+      make test || cat Testing/Temporary/LastTest.log
+    fi
+  - if [ "$REBUILD_ENTITYX" == "no"  ]; then mkdir entityx && cd entityx; fi
+  - cd ../entityx-install/ && export ENTITYX_ROOT="$(pwd)"
+  - popd
+
+  # End script
+  - popd
+
+before_script:
+  # cd back to build dir before trying to run scripts
+  - cd ${TRAVIS_BUILD_DIR}
+  - ulimit -c unlimited -S
+
+script:
+  - mkdir build && cd build
+  - cmake ..  -DCMAKE_BUILD_TYPE=Debug -DCMAKE_INSTALL_PREFIX="$(pwd)/install" -DENTITYX_PYTHON_BUILD_TESTING=true -DBOOST_ROOT=$BOOST_ROOT -DENTITYX_ROOT=$ENTITYX_ROOT
+  - make VERBOSE=1
+  - make test || (cat Testing/Temporary/LastTest.log && exit 1)

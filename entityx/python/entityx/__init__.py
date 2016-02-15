@@ -45,6 +45,7 @@ class Component(object):
         if not component:
             component = self._cls(*self._args, **self._kwargs)
             component.assign_to(_entityx._entity_manager, entity_id)
+            return self._build(entity_id)
         return component
 
 
